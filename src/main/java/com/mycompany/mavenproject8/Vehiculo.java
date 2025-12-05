@@ -24,7 +24,7 @@ class Vehiculo {
     private int ancho = 80;  // Ancho del sprite
     private int alto = 80;   // Alto del sprite
     private int tiempoRecuperacion = 0;
-    
+    private int tiempoEsperaCruce = 0;
     public Vehiculo(String tipo, String direccion, int x, int y) {
         this.tipo = tipo;
         this.direccion = direccion;
@@ -241,6 +241,31 @@ public int[] getPuntoFrontal() {
         this.siguienteDireccion = siguienteDireccion;
     }
     
+    
+    public void incrementarEsperaCruce() {
+        tiempoEsperaCruce++;
+    }
+    
+    /**
+     * Resetea el tiempo de espera
+     */
+    public void resetearEsperaCruce() {
+        tiempoEsperaCruce = 0;
+    }
+    
+    /**
+     * Obtiene el tiempo de espera
+     */
+    public int getTiempoEsperaCruce() {
+        return tiempoEsperaCruce;
+    }
+    
+    /**
+     * Verifica si está esperando demasiado tiempo
+     */
+    public boolean esperaDemasiado() {
+        return tiempoEsperaCruce > 180; // 3 segundos
+    }
     public void actualizarRecuperacion() {
         if (tiempoRecuperacion > 0) {
             tiempoRecuperacion--;

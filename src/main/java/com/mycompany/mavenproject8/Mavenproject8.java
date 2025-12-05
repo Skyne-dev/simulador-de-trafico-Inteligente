@@ -244,8 +244,9 @@ public class Mavenproject8 extends JPanel implements ActionListener {
         return;
     }
     
-    // 1. Tomar decisión de giro SOLO cuando está en el cruce
-    if (reglasCruce.estaEnCruce(vehiculo.getX(), vehiculo.getY(), vehiculo.getDireccion())) {
+    // 1. Tomar decisión de giro al aproximarse
+    if (reglasCruce.estaEnZonaDeReglas(vehiculo) || 
+        reglasCruce.estaEnCruce(vehiculo.getX(), vehiculo.getY(), vehiculo.getDireccion())) {
         reglasCruce.tomarDecisionDeGiro(vehiculo);
     }
     
@@ -253,34 +254,36 @@ public class Mavenproject8 extends JPanel implements ActionListener {
             vehiculo.getX(), vehiculo.getY(), vehiculo.getDireccion());
     
     if (enCruce) {
-        // Verificar si puede pasar según las reglas
+        // Si ya está en el cruce, puede continuar
+        // Ejecutar giro si corresponde
+        ejecutarGiroSiCorresponde(vehiculo);
+        
+    } else if (reglasCruce.estaEnZonaDeReglas(vehiculo)) {
+        // Está en zona de aproximación - aplicar reglas intuitivas
         boolean puedePasar = reglasCruce.puedePasar(vehiculo);
         
         if (!puedePasar) {
             // Detener y esperar
             vehiculo.setVelocidad(0);
-            reglasCruce.incrementarEspera();
+            reglasCruce.incrementarEspera(vehiculo);
             return;
+        }
+        
+        // Si puede pasar según las reglas
+        if (caminoDespejado(vehiculo)) {
+            vehiculo.setVelocidad(2 + (int) (Math.random() * 3));
         } else {
-            // Ocupar el cruce
-            reglasCruce.ocuparCruce(vehiculo.getDireccion());
+            // Aún no hay espacio
+            vehiculo.setVelocidad(0);
+            reglasCruce.incrementarEspera(vehiculo);
         }
-        
-        // 2. Ejecutar giro si está en el punto de giro
-        ejecutarGiroSiCorresponde(vehiculo);
-        
     } else {
-        // Liberar el cruce si sale de él
+        // Fuera de la zona - liberar si ya pasó
         reglasCruce.liberarCruceSiSale(vehiculo);
-        // También limpiar la decisión de giro
-        if (vehiculo.haPasadoElCruce()) {
-            // Resetear siguienteDirección para el próximo cruce
-            vehiculo.setSiguienteDireccion(vehiculo.getDireccion());
-        }
     }
     
-    // Si puede pasar o no está en el cruce, mantener velocidad normal
-    if (vehiculo.getVelocidad() == 0) {
+    // Reanudar si está detenido sin razón
+    if (vehiculo.getVelocidad() == 0 && !reglasCruce.estaEnZonaDeReglas(vehiculo)) {
         vehiculo.setVelocidad(2 + (int) (Math.random() * 3));
     }
 }
@@ -472,6 +475,39 @@ private double calcularDistancia(int x1, int y1, int x2, int y2) {
                       chocado.getTipo() + " (Direcciones: " + 
                       chocador.getDireccion() + " -> " + chocado.getDireccion() + ")");
 }
+  private boolean caminoDespejado(Vehiculo vehiculo) {
+    String direccion = vehiculo.getDireccion();
+    int x = vehiculo.getX();
+    int y = vehiculo.getY();
+    
+    // Crear área de verificación delante
+    Rectangle areaDelante = null;
+    
+    switch (direccion) {
+        case "este":
+            areaDelante = new Rectangle(x + 80, y + 10, 60, 60);
+            break;
+        case "oeste":
+            areaDelante = new Rectangle(x - 60, y + 10, 60, 60);
+            break;
+        case "norte":
+            areaDelante = new Rectangle(x + 10, y - 60, 60, 60);
+            break;
+        case "sur":
+            areaDelante = new Rectangle(x + 10, y + 80, 60, 60);
+            break;
+    }
+    
+    if (areaDelante == null) return true;
+    
+    for (Vehiculo otro : vehiculos) {
+        if (otro != vehiculo && otro.getAreaColision().intersects(areaDelante)) {
+            return false;
+        }
+    }
+    
+    return true;
+}
 
 /**
  * Retrocede un vehículo en su dirección opuesta
@@ -569,19 +605,8 @@ private void retrocederVehiculo(Vehiculo v, int distancia) {
                         vehiculo.getX(), vehiculo.getY(), vehiculo.getDireccion());
                 boolean esperando = !enCruce && vehiculo.getVelocidad() == 0; // Esperando ANTES del cruce
                 boolean enColision = colisionesActivas.contains(vehiculo);
+                int tiempoRecup = vehiculo.getTiempoRecuperacion();
 
-                // Aplicar efectos visuales
-                if (esperando) {
-                    // Efecto naranja para vehículos esperando
-                    g2d.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.7f));
-                    g2d.setColor(new Color(255, 165, 0, 100));
-                    g2d.fillRect(vehiculo.getX(), vehiculo.getY(), 100, 100);
-                } else if (enColision) {
-                    // Efecto rojo para vehículos en colisión
-                    g2d.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.5f));
-                    g2d.setColor(new Color(255, 0, 0, 150));
-                    g2d.fillRect(vehiculo.getX(), vehiculo.getY(), 100, 100);
-                }
 
                 // Dibujar sprite del vehículo
                 g2d.drawImage(spriteVehiculo, vehiculo.getX(), vehiculo.getY(), this);
@@ -609,6 +634,7 @@ private void retrocederVehiculo(Vehiculo v, int distancia) {
         // Dibujar estadísticas e información
         dibujarEstadisticas(g2d);
     }
+    
 
     private void dibujarEstadisticas(Graphics2D g2d) {
         // Fondo semitransparente para estadísticas
@@ -673,6 +699,8 @@ private void retrocederVehiculo(Vehiculo v, int distancia) {
     public void actionPerformed(ActionEvent e) {
         // Actualizar reglas del cruce
         reglasCruce.actualizar();
+        // Actualizar lista de vehículos en reglasCruce
+        reglasCruce.setVehiculos(vehiculos);
 
         // Mover vehículos y aplicar reglas
         for (Vehiculo vehiculo : vehiculos) {
@@ -691,53 +719,32 @@ private void retrocederVehiculo(Vehiculo v, int distancia) {
 
         // 4. Mantenimiento y reanudar
         for (Vehiculo vehiculo : vehiculos) {
-            vehiculo.actualizarRecuperacion();
-    
-        // Si está en colisión y tiene tiempo de recuperación, esperar
-            if (colisionesActivas.contains(vehiculo) && vehiculo.getTiempoRecuperacion() > 0) {
-                 continue;
-            }
-            
-        // Reanudar vehículos después de colisión (si se cumplió el tiempo)
-        if (colisionesActivas.contains(vehiculo) && vehiculo.getTiempoRecuperacion() == 0) {
-            // Intentar reanudar gradualmente
-        if (puedeReanudarDespuesColision(vehiculo)) {
-            vehiculo.setVelocidad(1 + (int) (Math.random() * 2)); // Velocidad reducida
-            colisionesActivas.remove(vehiculo);
-            System.out.println("Vehículo " + vehiculo.getTipo() + " reanudado después de colisión");
-        }
-        continue;
-    }
-    
+           vehiculo.actualizarRecuperacion();
         
-        // Reanudar vehículos detenidos por regla de cruce
+        if (colisionesActivas.contains(vehiculo)) {
+            continue;
+        }
+        
+        // Intentar reanudar vehículos detenidos
         if (vehiculo.getVelocidad() == 0) {
-            boolean enCruce = reglasCruce.estaEnCruce(
-                    vehiculo.getX(), vehiculo.getY(), vehiculo.getDireccion());
+            boolean enZonaReglas = reglasCruce.estaEnZonaDeReglas(vehiculo);
             
-            // Si ya no está en el cruce o puede pasar, reanudar
-            if (!reglasCruce.estaEnZonaDeReglas(vehiculo) || reglasCruce.puedePasar(vehiculo)) {
+            if (!enZonaReglas) {
+                vehiculo.setVelocidad(2 + (int) (Math.random() * 3));
+            } else if (reglasCruce.puedePasar(vehiculo) && caminoDespejado(vehiculo)) {
                 vehiculo.setVelocidad(2 + (int) (Math.random() * 3));
             }
         }
         
-        // --- MODIFICADO: Solo reposicionar si sale COMPLETAMENTE de la pantalla ---
-        // Aumentar los límites para que no desaparezcan fácilmente
-        int limiteHorizontal = 200;
-        int limiteVertical = 200;
-        
-        if (vehiculo.getX() < -limiteHorizontal || vehiculo.getX() > 800 + limiteHorizontal ||
-            vehiculo.getY() < -limiteVertical || vehiculo.getY() > 600 + limiteVertical) {
-            
-            // Verificar que no esté en colisión antes de reposicionar
-            if (!colisionesActivas.contains(vehiculo)) {
-                reposicionarVehiculo(vehiculo);
-                System.out.println("Vehículo " + vehiculo.getTipo() + " reposicionado por salir de pantalla");
-            }
+        // Reposicionar si sale de pantalla
+        if (vehiculo.getX() < -200 || vehiculo.getX() > 1000 ||
+            vehiculo.getY() < -200 || vehiculo.getY() > 800) {
+            reposicionarVehiculo(vehiculo);
         }
         }
-
+    
         repaint();
+
     }
     
     private boolean puedeReanudarDespuesColision(Vehiculo vehiculo) {
