@@ -369,8 +369,11 @@ public class Mavenproject8 extends JPanel implements ActionListener {
                 break;
         }
         
-        // Limpiar la decisión tomada para este cruce
-        // Esto se hará automáticamente cuando el vehículo salga del cruce
+        // Resetear siguiente dirección después del giro
+        vehiculo.setSiguienteDireccion(siguienteDir); // Ahora ambas son iguales
+        
+        // Debug
+        System.out.println("Giro ejecutado: " + dirActual + " -> " + siguienteDir);
     }
 }
 
@@ -987,13 +990,7 @@ public void actionPerformed(ActionEvent e) {
         totalColisiones++;
     }
     
-    // Registrar giros
-    for (Vehiculo vehiculo : vehiculos) {
-        if (!vehiculo.getDireccion().equals(vehiculo.getSiguienteDireccion())) {
-            totalGiros++;
-            vehiculo.setSiguienteDireccion(vehiculo.getDireccion()); // Reset
-        }
-    }
+  
     
     // Actualizar estadísticas cada 60 frames (~1 segundo)
     if (frameCount % 60 == 0) {
