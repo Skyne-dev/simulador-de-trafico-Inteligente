@@ -475,6 +475,7 @@ public class ReglasCruce {
         
         // Dibujar información
         dibujarInformacion(g);
+        
     }
     
     private void dibujarInformacion(Graphics2D g) {
@@ -496,7 +497,7 @@ public class ReglasCruce {
         g.drawString("Norte: " + colasEspera.get("norte").size(), 610, 250);
         g.drawString("Sur: " + colasEspera.get("sur").size(), 610, 270);
         
-        // Reglas aplicadas
+          // Reglas aplicadas
         g.setColor(Color.YELLOW);
         g.drawString("Reglas aplicadas:", 600, 300);
         g.setColor(Color.WHITE);
@@ -506,6 +507,58 @@ public class ReglasCruce {
         g.drawString("3. Quién llegó primero", 610, 360);
         g.drawString("4. Via principal (E-O) prioritaria", 610, 380);
         g.drawString("5. Anti-deadlock (3s máx espera)", 610, 400);
+        
+       
     }
+    
+     
+    
+    
+    // En ReglasCruce.java, añadir este método
+
+public void dibujarPanelLateral(Graphics2D g, int x, int y) {
+    g.setColor(Color.WHITE);
+    g.setFont(new Font("Arial", Font.PLAIN, 14));
+    
+    // Estado del cruce
+    String estadoCruce = vehiculosEnCruce.isEmpty() ? "LIBRE" : "OCUPADO";
+    Color colorEstado = vehiculosEnCruce.isEmpty() ? Color.GREEN : Color.YELLOW;
+    
+    g.setColor(colorEstado);
+    g.drawString("Estado: " + estadoCruce, x, y);
+    y += 20;
+    
+    g.setColor(Color.WHITE);
+    g.drawString("Vehículos en cruce: " + vehiculosEnCruce.size(), x, y);
+    y += 20;
+    
+    // Colas de espera
+    g.setColor(Color.CYAN);
+    g.drawString("Colas de espera:", x, y);
+    y += 20;
+    
+    g.setColor(Color.WHITE);
+    g.drawString("  Este: " + colasEspera.get("este").size(), x + 10, y);
+    y += 18;
+    g.drawString("  Oeste: " + colasEspera.get("oeste").size(), x + 10, y);
+    y += 18;
+    g.drawString("  Norte: " + colasEspera.get("norte").size(), x + 10, y);
+    y += 18;
+    g.drawString("  Sur: " + colasEspera.get("sur").size(), x + 10, y);
+    y += 25;
+    
+    // Reglas aplicadas recientemente
+    g.setColor(Color.YELLOW);
+    g.drawString("Regla aplicada:", 140, 700);
+    y = 720;
+    
+    g.setColor(Color.WHITE);
+    g.setFont(new Font("Arial", Font.PLAIN, 12));
+    g.drawString("  Prioridad derecha", 140, y);
+    y += 16;
+    g.drawString("  Via principal", x + 140, y);
+    y += 16;
+    g.drawString("  Orden llegada", x + 140, y);
+}
 }
 

@@ -10,6 +10,7 @@ package com.mycompany.mavenproject8;
 import java.awt.AlphaComposite;
 import java.awt.BasicStroke;
 import java.awt.Color;
+import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
@@ -23,6 +24,7 @@ import java.awt.image.BufferedImage;
 import java.io.File;
 import java.net.URL;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -45,6 +47,18 @@ public class Mavenproject8 extends JPanel implements ActionListener {
     private boolean mostrarAreasColision = false;
     private boolean reglasActivadas = true;
     private int vehiculosAgregados = 0;
+    //variables para stadisticas
+    private boolean mostrarDetallesAvanzados = true;
+    private boolean mostrarTendencias = true;
+    private Map<String, Integer> estadisticasColisiones = new HashMap<>();
+    private List<Integer> historicoVehiculos = new ArrayList<>();
+    private List<Integer> historicoColisiones = new ArrayList<>();
+    private List<Float> historicoFlujo = new ArrayList<>();
+    private long tiempoInicio = System.currentTimeMillis();
+    private int totalColisiones = 0;
+    private int totalGiros = 0;
+    private int totalVehiculosPasados = 0;
+    private int frameCount = 0;
 
     private File getProjectFolder() {
         try {
@@ -541,137 +555,381 @@ private void retrocederVehiculo(Vehiculo v, int distancia) {
         timer = new Timer(16, this);
         timer.start();
 
-        // Configurar controles del teclado
-        setFocusable(true);
-        addKeyListener(new KeyAdapter() {
-            @Override
-            public void keyPressed(KeyEvent e) {
-                switch (e.getKeyCode()) {
-                    case KeyEvent.VK_A ->
-                        generarVehiculosAutomaticos(3);
-                    case KeyEvent.VK_C -> {
-                        vehiculos.clear();
-                        colisionesActivas.clear();
-                        vehiculosAgregados = 0;
-                        reglasCruce = new ReglasCruce();
-                    }
-                    case KeyEvent.VK_H ->
-                        mostrarAreasColision = !mostrarAreasColision;
-                    case KeyEvent.VK_S ->
-                        reglasActivadas = !reglasActivadas;
-                    case KeyEvent.VK_SPACE ->
-                        reglasCruce = new ReglasCruce();
-                    case KeyEvent.VK_R -> {
-                        // Resetear un vehículo en colisión (SOLO si está atascado)
-                         if (!colisionesActivas.isEmpty()) {
-                         // Buscar el vehículo que lleva más tiempo en colisión
-                            Vehiculo masAntiguo = colisionesActivas.get(0);
-                           reposicionarVehiculo(masAntiguo);
-                        }
-                    }
-                    case KeyEvent.VK_P -> {
-                        // Pausar/reanudar simulación
-                        if (timer.isRunning()) {
-                            timer.stop();
-                        } else {
-                            timer.start();
-                        }
+        // Configurar tamaño del panel (ancho expandido para estadísticas)
+    setPreferredSize(new Dimension(1400, 800)); // 400px adicionales para estadísticas
+    
+    // Configurar controles del teclado
+    setFocusable(true);
+    addKeyListener(new KeyAdapter() {
+        @Override
+        public void keyPressed(KeyEvent e) {
+            switch (e.getKeyCode()) {
+                case KeyEvent.VK_A -> generarVehiculosAutomaticos(3);
+                case KeyEvent.VK_C -> {
+                    vehiculos.clear();
+                    colisionesActivas.clear();
+                    vehiculosAgregados = 0;
+                    estadisticasColisiones.clear();
+                    totalColisiones = 0;
+                    totalGiros = 0;
+                    reglasCruce = new ReglasCruce();
+                }
+                case KeyEvent.VK_H -> mostrarAreasColision = !mostrarAreasColision;
+                case KeyEvent.VK_S -> reglasActivadas = !reglasActivadas;
+                case KeyEvent.VK_SPACE -> reglasCruce = new ReglasCruce();
+                case KeyEvent.VK_R -> {
+                    if (!colisionesActivas.isEmpty()) {
+                        Vehiculo v = colisionesActivas.get(0);
+                        reposicionarVehiculo(v);
                     }
                 }
-                repaint();
+                case KeyEvent.VK_P -> {
+                    if (timer.isRunning()) {
+                        timer.stop();
+                    } else {
+                        timer.start();
+                    }
+                }
+                case KeyEvent.VK_D -> mostrarDetallesAvanzados = !mostrarDetallesAvanzados;
+                case KeyEvent.VK_T -> mostrarTendencias = !mostrarTendencias;
+                case KeyEvent.VK_E -> exportarEstadisticas();
             }
-        });
+            repaint();
+        }
+    }
+    );
+    
+    // Inicializar estadísticas
+    inicializarEstadisticas();
     }
 
+    
+   
     @Override
-    protected void paintComponent(Graphics g) {
-        super.paintComponent(g);
-
-        // Dibujar mapa
-        mapaPanel.dibujarMapa(g);
-
-        Graphics2D g2d = (Graphics2D) g;
-
-        // Dibujar información del cruce
-        reglasCruce.dibujar(g2d);
-
-        // Dibujar todos los vehículos automáticos
-        for (Vehiculo vehiculo : vehiculos) {
-            // El sprite a dibujar es el de la dirección ACTUAL, aunque vaya a girar
-            Image spriteVehiculo = sprites.get(vehiculo.getTipo() + vehiculo.getDireccion());
-            if (spriteVehiculo != null) {
-                // Efecto visual según estado
-                boolean enCruce = reglasCruce.estaEnCruce(
-                        vehiculo.getX(), vehiculo.getY(), vehiculo.getDireccion());
-                boolean esperando = !enCruce && vehiculo.getVelocidad() == 0; // Esperando ANTES del cruce
-                boolean enColision = colisionesActivas.contains(vehiculo);
-                int tiempoRecup = vehiculo.getTiempoRecuperacion();
-
-
-                // Dibujar sprite del vehículo
-                g2d.drawImage(spriteVehiculo, vehiculo.getX(), vehiculo.getY(), this);
-                g2d.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 1.0f));
-
-                // Dibujar área de colisión si está activado
-                if (mostrarAreasColision) {
-                    Rectangle area = vehiculo.getAreaColision();
-
-                    // Color según estado
-                    if (enColision) {
-                        g2d.setColor(Color.RED);
-                    } else if (esperando) {
-                        g2d.setColor(Color.ORANGE);
-                    } else {
-                        g2d.setColor(Color.GREEN);
-                    }
-
-                    g2d.setStroke(new BasicStroke(2));
-                    g2d.drawRect(area.x, area.y, area.width, area.height);
+protected void paintComponent(Graphics g) {
+    super.paintComponent(g);
+    
+    Graphics2D g2d = (Graphics2D) g;
+    
+    // Dividir pantalla: 1000px para mapa, 400px para estadísticas
+    int anchoMapa = 800;
+    int anchoEstadisticas = 400;
+    
+    // Crear clip para el mapa (solo izquierda)
+    g2d.setClip(0, 0, anchoMapa, getHeight());
+    
+    // Dibujar mapa en su área
+    mapaPanel.dibujarMapa(g);
+    
+    // Dibujar todos los vehículos automáticos
+    for (Vehiculo vehiculo : vehiculos) {
+        Image spriteVehiculo = sprites.get(vehiculo.getTipo() + vehiculo.getDireccion());
+        if (spriteVehiculo != null) {
+            // Efectos visuales según estado
+            boolean enCruce = reglasCruce.estaEnCruce(
+                    vehiculo.getX(), vehiculo.getY(), vehiculo.getDireccion());
+            boolean esperando = !enCruce && vehiculo.getVelocidad() == 0 && 
+                               reglasCruce.estaEnZonaDeReglas(vehiculo);
+            boolean enColision = colisionesActivas.contains(vehiculo);
+            
+            // Aplicar efectos visuales
+            if (esperando) {
+                g2d.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.7f));
+                g2d.setColor(new Color(255, 165, 0, 100));
+                g2d.fillRect(vehiculo.getX(), vehiculo.getY(), 100, 100);
+            } else if (enColision) {
+                g2d.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.5f));
+                g2d.setColor(new Color(255, 0, 0, 150));
+                g2d.fillRect(vehiculo.getX(), vehiculo.getY(), 100, 100);
+            }
+            
+            // Dibujar sprite del vehículo
+            g2d.drawImage(spriteVehiculo, vehiculo.getX(), vehiculo.getY(), this);
+            g2d.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 1.0f));
+            
+            // Dibujar área de colisión si está activado
+            if (mostrarAreasColision) {
+                Rectangle area = vehiculo.getAreaColision();
+                
+                // Color según estado
+                if (enColision) {
+                    g2d.setColor(Color.RED);
+                } else if (esperando) {
+                    g2d.setColor(Color.ORANGE);
+                } else {
+                    g2d.setColor(Color.GREEN);
                 }
+                
+                g2d.setStroke(new BasicStroke(2));
+                g2d.drawRect(area.x, area.y, area.width, area.height);
             }
         }
-
-        // Dibujar estadísticas e información
-        dibujarEstadisticas(g2d);
     }
     
+    // Quitar el clip para dibujar las estadísticas
+    g2d.setClip(null);
+    
+    // Dibujar panel de estadísticas (lado derecho)
+    dibujarPanelEstadisticas(g2d, anchoMapa, anchoEstadisticas);
+}
 
-    private void dibujarEstadisticas(Graphics2D g2d) {
-        // Fondo semitransparente para estadísticas
-        g2d.setColor(new Color(0, 0, 0, 180));
-        g2d.fillRect(10, 10, 250, 180);
-
-        // Estadísticas de la simulación
+private void dibujarPanelEstadisticas(Graphics2D g2d, int inicioX, int ancho) {
+    // Fondo del panel de estadísticas
+    g2d.setColor(new Color(20, 20, 30, 240));
+    g2d.fillRect(inicioX, 0, ancho, getHeight());
+    // Fondo del panel de estadísticas
+    g2d.setColor(new Color(20, 20, 30, 240));
+    g2d.fillRect(0, 600, 800, 800);
+    // Borde del panel
+    g2d.setColor(new Color(60, 60, 80));
+    g2d.setStroke(new BasicStroke(3));
+    g2d.drawRect(inicioX, 0, ancho - 1, getHeight() - 1);
+    
+    // Título del panel
+    g2d.setColor(Color.CYAN);
+    g2d.setFont(new Font("Arial", Font.BOLD, 24));
+    g2d.drawString("PANEL DE CONTROL", inicioX + 20, 40);
+    
+    // Separador
+    g2d.setColor(new Color(100, 100, 120));
+    g2d.fillRect(inicioX + 20, 55, ancho - 40, 2);
+    
+    int yPos = 90;
+    
+    // Sección 1: ESTADO ACTUAL
+    g2d.setColor(Color.YELLOW);
+    g2d.setFont(new Font("Arial", Font.BOLD, 18));
+    g2d.drawString("ESTADO ACTUAL", inicioX + 20, yPos);
+    yPos += 30;
+    
+    g2d.setColor(Color.WHITE);
+    g2d.setFont(new Font("Arial", Font.PLAIN, 14));
+    g2d.drawString("Vehículos activos: " + vehiculos.size(), inicioX + 30, yPos);
+    yPos += 25;
+    g2d.drawString("Total agregados: " + vehiculosAgregados, inicioX + 30, yPos);
+    yPos += 25;
+    g2d.drawString("Colisiones activas: " + colisionesActivas.size(), inicioX + 30, yPos);
+    yPos += 25;
+    g2d.drawString("Reglas: " + (reglasActivadas ? "ACTIVADAS" : "DESACTIVADAS"), inicioX + 30, yPos);
+    yPos += 25;
+    g2d.drawString("Áreas colisión: " + (mostrarAreasColision ? "VISIBLE" : "OCULTO"), inicioX + 30, yPos);
+    
+    yPos += 40;
+    
+    // Sección 2: DISTRIBUCIÓN DE TRÁFICO
+    g2d.setColor(Color.GREEN);
+    g2d.setFont(new Font("Arial", Font.BOLD, 18));
+    g2d.drawString("DISTRIBUCIÓN", inicioX + 20, yPos);
+    yPos += 30;
+    
+    int[] contadoresDir = contarVehiculosPorDireccion();
+    g2d.setColor(Color.WHITE);
+    g2d.setFont(new Font("Arial", Font.PLAIN, 14));
+    
+    // Barras de distribución
+    int barWidth = 150;
+    int barHeight = 20;
+    int barStartX = inicioX + 30;
+    
+    // Este
+    g2d.setColor(new Color(0, 150, 255));
+    g2d.fillRect(barStartX, yPos, (barWidth * contadoresDir[0]) / Math.max(1, vehiculos.size()), barHeight);
+    g2d.setColor(Color.WHITE);
+    g2d.drawString("Este: " + contadoresDir[0] + " vehículos", barStartX + 5, yPos + 15);
+    yPos += 30;
+    
+    // Oeste
+    g2d.setColor(new Color(255, 100, 0));
+    g2d.fillRect(barStartX, yPos, (barWidth * contadoresDir[1]) / Math.max(1, vehiculos.size()), barHeight);
+    g2d.setColor(Color.WHITE);
+    g2d.drawString("Oeste: " + contadoresDir[1] + " vehículos", barStartX + 5, yPos + 15);
+    yPos += 30;
+    
+    // Norte
+    g2d.setColor(new Color(0, 200, 100));
+    g2d.fillRect(barStartX, yPos, (barWidth * contadoresDir[2]) / Math.max(1, vehiculos.size()), barHeight);
+    g2d.setColor(Color.WHITE);
+    g2d.drawString("Norte: " + contadoresDir[2] + " vehículos", barStartX + 5, yPos + 15);
+    yPos += 30;
+    
+    // Sur
+    g2d.setColor(new Color(200, 0, 200));
+    g2d.fillRect(barStartX, yPos, (barWidth * contadoresDir[3]) / Math.max(1, vehiculos.size()), barHeight);
+    g2d.setColor(Color.WHITE);
+    g2d.drawString("Sur: " + contadoresDir[3] + " vehículos", barStartX + 5, yPos + 15);
+    
+    yPos += 50;
+    
+    // Sección 3: ESTADÍSTICAS AVANZADAS
+    if (mostrarDetallesAvanzados) {
+        g2d.setColor(Color.MAGENTA);
+        g2d.setFont(new Font("Arial", Font.BOLD, 18));
+        g2d.drawString("ESTADÍSTICAS AVANZADAS", inicioX + 20, yPos);
+        yPos += 30;
+        
         g2d.setColor(Color.WHITE);
-        g2d.setFont(new Font("Arial", Font.BOLD, 14));
-        g2d.drawString("SIMULADOR DE TRÁFICO", 20, 30);
-
-        g2d.setFont(new Font("Arial", Font.PLAIN, 12));
-        g2d.drawString("Vehículos activos: " + vehiculos.size(), 20, 55);
-        g2d.drawString("Total agregados: " + vehiculosAgregados, 20, 75);
-        g2d.drawString("Colisiones activas: " + colisionesActivas.size(), 20, 95);
-        g2d.drawString("Reglas de cruce: " + (reglasActivadas ? "ACTIVADAS" : "DESACTIVADAS"), 20, 115);
-        g2d.drawString("Áreas colisión (H): " + (mostrarAreasColision ? "ON" : "OFF"), 20, 135);
-
-        // Distribución de vehículos por dirección
-        int[] contadoresDir = contarVehiculosPorDireccion();
-        g2d.drawString("Distribución direcciones:", 20, 160);
-        g2d.drawString("Este: " + contadoresDir[0] + " | Oeste: " + contadoresDir[1], 30, 180);
-        g2d.drawString("Norte: " + contadoresDir[2] + " | Sur: " + contadoresDir[3], 30, 200);
-
-        // Controles
-        g2d.setColor(Color.YELLOW);
-        g2d.drawString("Controles:", 300, 30);
-        g2d.setColor(Color.WHITE);
-        g2d.setFont(new Font("Arial", Font.PLAIN, 11));
-        g2d.drawString("A: Agregar 3 vehículos", 300, 50);
-        g2d.drawString("C: Limpiar todos los vehículos", 300, 70);
-        g2d.drawString("H: Mostrar/ocultar áreas de colisión", 300, 90);
-        g2d.drawString("S: Activar/desactivar reglas de cruce", 300, 110);
-        g2d.drawString("SPACE: Resetear reglas del cruce", 300, 130);
-        g2d.drawString("R: Resetear vehículo en colisión", 300, 150);
-        g2d.drawString("P: Pausar/Reanudar simulación", 300, 170);
+        g2d.setFont(new Font("Arial", Font.PLAIN, 14));
+        
+        long tiempoTranscurrido = (System.currentTimeMillis() - tiempoInicio) / 1000;
+        g2d.drawString("Tiempo simulación: " + tiempoTranscurrido + "s", inicioX + 30, yPos);
+        yPos += 25;
+        
+        g2d.drawString("Total colisiones: " + totalColisiones, inicioX + 30, yPos);
+        yPos += 25;
+        
+        g2d.drawString("Total giros: " + totalGiros, inicioX + 30, yPos);
+        yPos += 25;
+        
+        g2d.drawString("Vehículos/hora: " + calcularFlujoPorHora(), inicioX + 30, yPos);
+        yPos += 25;
+        
+        if (tiempoTranscurrido > 0) {
+            g2d.drawString("Colisiones/min: " + String.format("%.2f", 
+                (totalColisiones * 60.0) / tiempoTranscurrido), inicioX + 30, yPos);
+            yPos += 25;
+        }
     }
+    
+    yPos =620;
+    
+    // Sección 4: INFORMACIÓN DEL CRUCE
+    g2d.setColor(Color.ORANGE);
+    g2d.setFont(new Font("Arial", Font.BOLD, 18));
+    g2d.drawString("INFORMACIÓN DEL CRUCE", 20, yPos);
+    yPos += 20;
+    
+    // Dibujar reglas del cruce en el panel lateral
+    reglasCruce.dibujarPanelLateral(g2d,  30, yPos);
+    
+    yPos =630;
+    
+    // Sección 5: TENDENCIAS (si está habilitado)
+    if (mostrarTendencias && historicoVehiculos.size() > 10) {
+        g2d.setColor(new Color(100, 200, 255));
+        g2d.setFont(new Font("Arial", Font.BOLD, 18));
+        g2d.drawString("TENDENCIAS",  400, yPos);
+        yPos += 30;
+        
+        dibujarGraficoTendencias(g2d,  400, yPos, 350, 120);
+    }
+    
+    yPos =590;
+    
+    // Sección 6: CONTROLES
+    g2d.setColor(Color.GRAY);
+    g2d.setFont(new Font("Arial", Font.BOLD, 16));
+    g2d.drawString("CONTROLES", inicioX + 20, yPos);
+    yPos += 25;
+    
+    g2d.setColor(Color.LIGHT_GRAY);
+    g2d.setFont(new Font("Arial", Font.PLAIN, 12));
+    g2d.drawString("A: Agregar 3 vehículos", inicioX + 30, yPos);
+    yPos += 20;
+    g2d.drawString("C: Limpiar todos", inicioX + 30, yPos);
+    yPos += 20;
+    g2d.drawString("H: Áreas colisión", inicioX + 30, yPos);
+    yPos += 20;
+    g2d.drawString("S: Reglas ON/OFF", inicioX + 30, yPos);
+    yPos += 20;
+    g2d.drawString("SPACE: Resetear reglas", inicioX + 30, yPos);
+    yPos += 20;
+    g2d.drawString("R: Resetear vehículo", inicioX + 30, yPos);
+    yPos += 20;
+    g2d.drawString("P: Pausar/Reanudar", inicioX + 30, yPos);
+    yPos += 20;
+    g2d.drawString("D: Detalles ON/OFF", inicioX + 30, yPos);
+    yPos += 20;
+    g2d.drawString("T: Tendencias ON/OFF", inicioX + 30, yPos);
+  
+    g2d.drawString("E: Exportar datos", inicioX + 200, yPos);
+}
+
+private int calcularFlujoPorHora() {
+    long tiempoSegundos = (System.currentTimeMillis() - tiempoInicio) / 1000;
+    if (tiempoSegundos == 0) return 0;
+    return (int)((vehiculosAgregados * 3600.0) / tiempoSegundos);
+}
+
+private void dibujarGraficoTendencias(Graphics2D g2d, int x, int y, int ancho, int alto) {
+    // Fondo del gráfico
+    g2d.setColor(new Color(30, 30, 40));
+    g2d.fillRect(x, y, ancho, alto);
+    
+    // Borde
+    g2d.setColor(new Color(80, 80, 100));
+    g2d.drawRect(x, y, ancho, alto);
+    
+    if (historicoVehiculos.size() < 2) return;
+    
+    // Encontrar máximos para escalar
+    int maxVehiculos = Collections.max(historicoVehiculos);
+    int maxColisiones = historicoColisiones.isEmpty() ? 1 : Collections.max(historicoColisiones);
+    int maxValor = Math.max(maxVehiculos, maxColisiones);
+    if (maxValor == 0) maxValor = 1;
+    
+    // Dibujar líneas de referencia
+    g2d.setColor(new Color(60, 60, 80));
+    for (int i = 1; i <= 4; i++) {
+        int lineaY = y + alto - (alto * i) / 5;
+        g2d.drawLine(x, lineaY, x + ancho, lineaY);
+    }
+    
+    // Dibujar tendencia de vehículos (línea azul)
+    g2d.setColor(new Color(0, 150, 255, 200));
+    g2d.setStroke(new BasicStroke(2));
+    
+    int puntos = Math.min(historicoVehiculos.size(), 50); // Últimos 50 puntos
+    int inicio = Math.max(0, historicoVehiculos.size() - puntos);
+    
+    for (int i = 1; i < puntos; i++) {
+        int x1 = x + ((i - 1) * ancho) / puntos;
+        int y1 = y + alto - (historicoVehiculos.get(inicio + i - 1) * alto) / maxValor;
+        int x2 = x + (i * ancho) / puntos;
+        int y2 = y + alto - (historicoVehiculos.get(inicio + i) * alto) / maxValor;
+        
+        g2d.drawLine(x1, y1, x2, y2);
+    }
+    
+    // Dibujar tendencia de colisiones (línea roja)
+    if (!historicoColisiones.isEmpty()) {
+        g2d.setColor(new Color(255, 50, 50, 200));
+        
+        int puntosCol = Math.min(historicoColisiones.size(), 50);
+        int inicioCol = Math.max(0, historicoColisiones.size() - puntosCol);
+        
+        for (int i = 1; i < puntosCol; i++) {
+            int x1 = x + ((i - 1) * ancho) / puntosCol;
+            int y1 = y + alto - (historicoColisiones.get(inicioCol + i - 1) * alto) / maxValor;
+            int x2 = x + (i * ancho) / puntosCol;
+            int y2 = y + alto - (historicoColisiones.get(inicioCol + i) * alto) / maxValor;
+            
+            g2d.drawLine(x1, y1, x2, y2);
+        }
+    }
+    
+    // Leyenda
+    g2d.setColor(Color.WHITE);
+    g2d.setFont(new Font("Arial", Font.PLAIN, 10));
+    g2d.drawString("Vehículos", x + 5, y + 15);
+    g2d.setColor(new Color(255, 50, 50));
+    g2d.drawString("Colisiones", x + 5, y + 30);
+}
+    
+    private void inicializarEstadisticas() {
+    estadisticasColisiones.put("leve", 0);
+    estadisticasColisiones.put("moderada", 0);
+    estadisticasColisiones.put("grave", 0);
+}
+    private void exportarEstadisticas() {
+    System.out.println("=== EXPORTANDO ESTADÍSTICAS ===");
+    System.out.println("Tiempo de simulación: " + ((System.currentTimeMillis() - tiempoInicio) / 1000) + "s");
+    System.out.println("Total vehículos: " + vehiculosAgregados);
+    System.out.println("Colisiones totales: " + totalColisiones);
+    System.out.println("Giros realizados: " + totalGiros);
+    System.out.println("Vehículos pasados por cruce: " + totalVehiculosPasados);
+}
+    
+
 
     private int[] contarVehiculosPorDireccion() {
         int[] contadores = new int[4]; // 0:este, 1:oeste, 2:norte, 3:sur
@@ -695,31 +953,63 @@ private void retrocederVehiculo(Vehiculo v, int distancia) {
         return contadores;
     }
 
-    @Override
-    public void actionPerformed(ActionEvent e) {
-        // Actualizar reglas del cruce
-        reglasCruce.actualizar();
-        // Actualizar lista de vehículos en reglasCruce
-        reglasCruce.setVehiculos(vehiculos);
-
-        // Mover vehículos y aplicar reglas
-        for (Vehiculo vehiculo : vehiculos) {
-
-            // 1. Aplicar reglas de cruce (detención/prioridad/giro)
-            manejarReglasCruce(vehiculo);
-
-            // 2. Mover solo si no está detenido
-            if (vehiculo.getVelocidad() > 0) {
-                vehiculo.mover();
+  
+   @Override
+public void actionPerformed(ActionEvent e) {
+    frameCount++;
+    
+    // Actualizar reglas del cruce
+    reglasCruce.actualizar();
+    
+    // Actualizar lista de vehículos en reglasCruce
+    reglasCruce.setVehiculos(vehiculos);
+    
+    // Mover vehículos y aplicar reglas
+    for (Vehiculo vehiculo : vehiculos) {
+        manejarReglasCruce(vehiculo);
+        
+        if (vehiculo.getVelocidad() > 0) {
+            vehiculo.mover();
+            
+            // Registrar cuando un vehículo pasa el cruce
+            if (vehiculo.haPasadoElCruce()) {
+                totalVehiculosPasados++;
             }
         }
-
-        // 3. Detectar colisiones físicas (después del movimiento)
-        detectarColisiones();
-
-        // 4. Mantenimiento y reanudar
-        for (Vehiculo vehiculo : vehiculos) {
-           vehiculo.actualizarRecuperacion();
+    }
+    
+    // Detectar colisiones
+    int colisionesPrevias = colisionesActivas.size();
+    detectarColisiones();
+    
+    // Registrar nuevas colisiones
+    if (colisionesActivas.size() > colisionesPrevias) {
+        totalColisiones++;
+    }
+    
+    // Registrar giros
+    for (Vehiculo vehiculo : vehiculos) {
+        if (!vehiculo.getDireccion().equals(vehiculo.getSiguienteDireccion())) {
+            totalGiros++;
+            vehiculo.setSiguienteDireccion(vehiculo.getDireccion()); // Reset
+        }
+    }
+    
+    // Actualizar estadísticas cada 60 frames (~1 segundo)
+    if (frameCount % 60 == 0) {
+        historicoVehiculos.add(vehiculos.size());
+        historicoColisiones.add(colisionesActivas.size());
+        
+        // Mantener tamaño máximo del histórico
+        if (historicoVehiculos.size() > 100) {
+            historicoVehiculos.remove(0);
+            historicoColisiones.remove(0);
+        }
+    }
+    
+    // Mantenimiento
+    for (Vehiculo vehiculo : vehiculos) {
+        vehiculo.actualizarRecuperacion();
         
         if (colisionesActivas.contains(vehiculo)) {
             continue;
@@ -737,15 +1027,14 @@ private void retrocederVehiculo(Vehiculo v, int distancia) {
         }
         
         // Reposicionar si sale de pantalla
-        if (vehiculo.getX() < -200 || vehiculo.getX() > 1000 ||
-            vehiculo.getY() < -200 || vehiculo.getY() > 800) {
+        if (vehiculo.getX() < -200 || vehiculo.getX() > 1200 ||
+            vehiculo.getY() < -200 || vehiculo.getY() > 1000) {
             reposicionarVehiculo(vehiculo);
         }
-        }
-    
-        repaint();
-
     }
+    
+    repaint();
+}
     
     private boolean puedeReanudarDespuesColision(Vehiculo vehiculo) {
     // Verificar que no haya otro vehículo justo delante
@@ -786,24 +1075,27 @@ private void retrocederVehiculo(Vehiculo v, int distancia) {
     }
 
     public static void main(String[] args) {
-        JFrame frame = new JFrame("Simulador de Tráfico Automático");
-        Mavenproject8 simulador = new Mavenproject8();
-        frame.add(simulador);
-
-        frame.setSize(800, 600);
-        frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        frame.setLocationRelativeTo(null);
-        frame.setVisible(true);
-
-        // Mensaje inicial
-        System.out.println("Simulador de Tráfico iniciado");
-        System.out.println("Controles:");
-        System.out.println("A - Agregar 3 vehículos");
-        System.out.println("C - Limpiar todos los vehículos");
-        System.out.println("H - Mostrar/ocultar áreas de colisión");
-        System.out.println("S - Activar/desactivar reglas de cruce");
-        System.out.println("SPACE - Resetear reglas del cruce");
-        System.out.println("R - Resetear vehículo en colisión");
-        System.out.println("P - Pausar/Reanudar simulación");
+        JFrame frame = new JFrame("Simulador de Tráfico Inteligente - Panel Expandido");
+    Mavenproject8 simulador = new Mavenproject8();
+    frame.add(simulador);
+    
+    // Usar tamaño expandido
+    frame.setSize(1200, 820);
+    frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+    frame.setLocationRelativeTo(null);
+    frame.setVisible(true);
+    
+    // Mensaje inicial
+    System.out.println("Simulador de Tráfico con Panel de Estadísticas");
+    System.out.println("==============================================");
+    System.out.println("Controles principales:");
+    System.out.println("A - Agregar 3 vehículos");
+    System.out.println("C - Limpiar todos los vehículos");
+    System.out.println("H - Mostrar/ocultar áreas de colisión");
+    System.out.println("S - Activar/desactivar reglas de cruce");
+    System.out.println("D - Mostrar/ocultar detalles avanzados");
+    System.out.println("T - Mostrar/ocultar gráfico de tendencias");
+    System.out.println("E - Exportar estadísticas a consola");
+    System.out.println("==============================================");
     }
 }
